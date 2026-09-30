@@ -47,7 +47,7 @@ jobs:
           version: ${{ env.HELM_VERSION }}
       - run: pip install -e ".[dev]"
       - run: pytest --cov --cov-report=term --cov-report=xml --junitxml=report.xml
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with:
           name: test-report-py${{ matrix.python-version }}
@@ -67,7 +67,7 @@ jobs:
       - run: python -m build
       - run: twine check --strict dist/*
       - run: pip install dist/*.whl && helmreview --version
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: dist
           path: dist/
