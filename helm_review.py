@@ -23,6 +23,14 @@ Ejemplos:
   python helm_review.py oci://harbor.local/charts/app --version 1.4.2 -f prod.yaml
   python helm_review.py ./mychart --rendered render.yaml        # analiza un YAML ya renderizado
   python helm_review.py ./mychart --external --save-rendered ./out
+  python helm_review.py ./mychart -f values-ocp.yaml --ocp-version 4.16 --report rev.md   # OpenShift
+
+Modo OpenShift (--platform openshift / --ocp-version):
+  - Pasa a helm template las APIs de OpenShift (route.openshift.io, security.openshift.io...) para que
+    los condicionales .Capabilities rendericen igual que en el cluster.
+  - Valida contra la SCC restricted-v2: UID/GID/fsGroup fijos, capabilities, privileged, host*,
+    puertos < 1024, y reporta qué SCC adicional necesitaría cada workload.
+  - Revisa Routes (TLS, insecureEdgeTerminationPolicy), SCC y RBAC sobre SCC, DeploymentConfig.
 
 Códigos de salida: 0 = OK, 1 = error de ejecución, 2 = hallazgos >= --fail-on
 """
@@ -52,7 +60,24 @@ SEV_ES = {"HIGH": "ALTA", "MEDIUM": "MEDIA", "LOW": "BAJA", "INFO": "INFO"}
 SEV_COLOR = {"HIGH": "\033[31m", "MEDIUM": "\033[33m", "LOW": "\033[36m", "INFO": "\033[90m"}
 RESET, BOLD = "\033[0m", "\033[1m"
 
-WORKLOADS = {"Deployment", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Pod"}
+WORKLOADS = {"Deployment", "DeploymentConfig", "StatefulSet", "DaemonSet", "ReplicaSet", "Job", "CronJob", "Pod"}
+SCALABLE = ("Deployment", "DeploymentConfig", "StatefulSet", "ReplicaSet")
+
+# ---- OpenShift ----
+# APIs que un cluster OpenShift expone; se pasan a helm template para que los
+# condicionales .Capabilities.APIVersions.Has "route.openshift.io/v1" rendericen igual que en el cluster.
+OCP_API_VERSIONS = [
+    "route.openshift.io/v1", "route.openshift.io/v1/Route",
+    "security.openshift.io/v1", "security.openshift.io/v1/SecurityContextConstraints",
+    "apps.openshift.io/v1", "image.openshift.io/v1", "build.openshift.io/v1",
+    "project.openshift.io/v1", "config.openshift.io/v1",
+    "monitoring.coreos.com/v1", "monitoring.coreos.com/v1/ServiceMonitor",
+]
+# Versión OCP -> versión de Kubernetes
+OCP_KUBE_MAP = {"4.12": "1.25", "4.13": "1.26", "4.14": "1.27", "4.15": "1.28", "4.16": "1.29",
+                "4.17": "1.30", "4.18": "1.31", "4.19": "1.32", "4.20": "1.33"}
+# Única capability que restricted-v2 permite agregar
+OCP_ALLOWED_CAPS = {"NET_BIND_SERVICE"}
 
 # apiVersion -> versión de Kubernetes en la que se eliminó
 DEPRECATED_APIS = {
@@ -311,6 +336,10 @@ def helm_template(args, chart, release):
         cmd += ["--kube-version", args.kube_version]
     for a in args.api_versions:
         cmd += ["--api-versions", a]
+    if args.platform == "openshift":
+        for a in OCP_API_VERSIONS:
+            if a not in args.api_versions:
+                cmd += ["--api-versions", a]
     return run(cmd)
 
 
@@ -371,7 +400,8 @@ def check_chart_meta(rep, chart, meta):
 # --------------------------------------------------------------------------------------
 # Análisis del YAML renderizado
 # --------------------------------------------------------------------------------------
-def analyze(rep, docs, namespace):
+def analyze(rep, docs, namespace, platform="kubernetes"):
+    ocp = platform == "openshift"
     by_kind = {}
     for obj, src in docs:
         by_kind.setdefault(obj["kind"], []).append((obj, src))
@@ -407,7 +437,45 @@ def analyze(rep, docs, namespace):
                     source=src)
 
         if kind in WORKLOADS:
-            analyze_workload(rep, obj, src, hpas, pdbs, netpols)
+            analyze_workload(rep, obj, src, hpas, pdbs, netpols, platform)
+            if kind == "DeploymentConfig":
+                rep.add("MEDIUM", "ocp-deploymentconfig", r,
+                        "DeploymentConfig está deprecado desde OpenShift 4.14: migrar a Deployment", source=src)
+        elif kind == "Route":
+            spec = obj.get("spec") or {}
+            tls = spec.get("tls") or {}
+            if not tls:
+                rep.add("MEDIUM", "ocp-route-tls", r, "Route sin TLS (tráfico HTTP sin cifrar)", source=src)
+            else:
+                term = tls.get("termination")
+                if term not in ("edge", "reencrypt", "passthrough"):
+                    rep.add("MEDIUM", "ocp-route-tls", r, f"Route con termination inválida o vacía: '{term}'",
+                            source=src)
+                if tls.get("insecureEdgeTerminationPolicy") == "Allow":
+                    rep.add("MEDIUM", "ocp-route-tls", r,
+                            "insecureEdgeTerminationPolicy: Allow (acepta HTTP); usar Redirect", source=src)
+                if tls.get("key") or tls.get("certificate"):
+                    rep.add("MEDIUM", "ocp-route-cert", r,
+                            "Certificado/llave embebidos en la Route: verificar que no estén en values versionados",
+                            source=src)
+            if not (spec.get("to") or {}).get("name"):
+                rep.add("HIGH", "ocp-route", r, "Route sin spec.to.name (no apunta a ningún Service)", source=src)
+        elif kind == "SecurityContextConstraints":
+            flags = [k for k in ("allowPrivilegedContainer", "allowHostNetwork", "allowHostPID", "allowHostIPC",
+                                 "allowHostDirVolumePlugin", "allowHostPorts") if obj.get(k)]
+            ru = (obj.get("runAsUser") or {}).get("type")
+            if ru == "RunAsAny":
+                flags.append("runAsUser: RunAsAny")
+            rep.add("HIGH", "ocp-scc", r,
+                    "El chart crea una SCC (requiere cluster-admin y aprobación de seguridad)"
+                    + (f"; permisos amplios: {', '.join(flags)}" if flags else ""), source=src)
+        elif kind in ("BuildConfig", "ImageStream"):
+            rep.add("INFO", "ocp-build", r, f"{kind} en un chart de despliegue: revisar si corresponde al pipeline",
+                    source=src)
+        elif kind in ("Namespace", "Project", "ProjectRequest"):
+            rep.add("LOW", "namespace-en-chart", r,
+                    "El chart crea el namespace/proyecto: normalmente se crea aparte (oc new-project / GitOps)",
+                    source=src)
         elif kind == "Secret":
             if (obj.get("data") or obj.get("stringData")) and obj.get("type") != "kubernetes.io/service-account-token":
                 rep.add("MEDIUM", "secret-embebido", r,
@@ -415,10 +483,14 @@ def analyze(rep, docs, namespace):
                         "values versionados (preferir External Secrets / Sealed Secrets / SOPS)", source=src)
         elif kind == "Ingress":
             spec = obj.get("spec") or {}
-            if not spec.get("tls"):
-                rep.add("MEDIUM", "ingress-tls", r, "Ingress sin bloque tls (tráfico HTTP sin cifrar)", source=src)
             ann = meta.get("annotations") or {}
-            if not spec.get("ingressClassName") and "kubernetes.io/ingress.class" not in ann:
+            if not spec.get("tls") and not (ocp and ann.get("route.openshift.io/termination")):
+                rep.add("MEDIUM", "ingress-tls", r, "Ingress sin bloque tls (tráfico HTTP sin cifrar)", source=src)
+            if ocp:
+                rep.add("INFO", "ocp-ingress", r,
+                        "OpenShift convierte este Ingress en Route automáticamente; la terminación TLS se controla "
+                        "con la anotación route.openshift.io/termination", source=src)
+            elif not spec.get("ingressClassName") and "kubernetes.io/ingress.class" not in ann:
                 rep.add("LOW", "ingress-class", r, "Sin ingressClassName: depende de la IngressClass por defecto",
                         source=src)
         elif kind == "Service":
@@ -433,8 +505,13 @@ def analyze(rep, docs, namespace):
                 rep.add("MEDIUM", "service-externalips", r, f"externalIPs definidos: {spec['externalIPs']}",
                         source=src)
         elif kind in ("ClusterRoleBinding", "RoleBinding"):
-            if (obj.get("roleRef") or {}).get("name") == "cluster-admin":
+            role = (obj.get("roleRef") or {}).get("name", "")
+            if role == "cluster-admin":
                 rep.add("HIGH", "rbac", r, "Binding a cluster-admin", source=src)
+            if role.startswith("system:openshift:scc:"):
+                rep.add("HIGH", "ocp-scc-rbac", r,
+                        f"Asigna la SCC '{role.rsplit(':', 1)[-1]}' al ServiceAccount: verificar aprobación",
+                        source=src)
         elif kind in ("ClusterRole", "Role"):
             for rule in obj.get("rules") or []:
                 verbs = set(rule.get("verbs") or [])
@@ -446,6 +523,11 @@ def analyze(rep, docs, namespace):
                             f"verbs={sorted(verbs)}", source=src)
                 if kind == "ClusterRole" and "secrets" in resources and verbs & {"get", "list", "watch", "*"}:
                     rep.add("MEDIUM", "rbac-secrets", r, "Lectura de Secrets a nivel de cluster", source=src)
+                if "securitycontextconstraints" in resources and verbs & {"use", "*"}:
+                    names = rule.get("resourceNames") or ["(todas)"]
+                    rep.add("HIGH", "ocp-scc-rbac", r,
+                            f"Otorga 'use' sobre SCC: {', '.join(names)}. Verificar que esté aprobado por seguridad",
+                            source=src)
         elif kind == "PersistentVolumeClaim":
             spec = obj.get("spec") or {}
             size = parse_mem(((spec.get("resources") or {}).get("requests") or {}).get("storage")) or 0
@@ -470,7 +552,8 @@ def analyze(rep, docs, namespace):
                 "El chart no define NetworkPolicy: el aislamiento depende de la política de red del cluster")
 
 
-def analyze_workload(rep, obj, src, hpas, pdbs, netpols):
+def analyze_workload(rep, obj, src, hpas, pdbs, netpols, platform="kubernetes"):
+    ocp = platform == "openshift"
     kind, r = obj["kind"], rid(obj)
     spec = obj.get("spec") or {}
     name = (obj.get("metadata") or {}).get("name")
@@ -481,7 +564,7 @@ def analyze_workload(rep, obj, src, hpas, pdbs, netpols):
     per_node = kind == "DaemonSet"
 
     # ---- Réplicas / HA ----
-    if kind in ("Deployment", "StatefulSet", "ReplicaSet"):
+    if kind in SCALABLE:
         base = to_int(spec.get("replicas"), hpa[0] if hpa else 1)
         rmax = hpa[1] if hpa and hpa[1] else base
         rtxt = str(base) + (f" (HPA {hpa[0]}-{hpa[1]})" if hpa else "")
@@ -499,7 +582,7 @@ def analyze_workload(rep, obj, src, hpas, pdbs, netpols):
         base = rmax = 1
         rtxt = "1"
 
-    if kind in ("Deployment", "StatefulSet"):
+    if kind in ("Deployment", "DeploymentConfig", "StatefulSet"):
         if not hpa and base < 2:
             rep.add("MEDIUM", "replicas", r, f"{base} réplica(s) sin HPA: sin alta disponibilidad", source=src)
         if hpa and spec.get("replicas") is not None:
@@ -552,6 +635,34 @@ def analyze_workload(rep, obj, src, hpas, pdbs, netpols):
                 source=src)
 
     psc = pspec.get("securityContext") or {}
+    scc_needed = set()  # OpenShift: SCC distintas de restricted-v2 que este pod necesitaría
+
+    if ocp:
+        if pspec.get("hostNetwork"):
+            scc_needed.add("hostnetwork-v2")
+        if pspec.get("hostPID") or pspec.get("hostIPC"):
+            scc_needed.add("privileged")
+        if any("hostPath" in v for v in pspec.get("volumes") or []):
+            scc_needed.add("hostmount-anyuid")
+        ru = psc.get("runAsUser")
+        if isinstance(ru, int) and ru > 0:
+            scc_needed.add("nonroot-v2")
+            rep.add("HIGH", "ocp-uid", r,
+                    f"securityContext.runAsUser: {ru} fijo a nivel de pod. restricted-v2 asigna un UID aleatorio del "
+                    "rango del namespace y rechaza UIDs fuera de él. Quitar runAsUser (y no asumir un UID en la imagen)",
+                    source=src)
+        for key in ("runAsGroup", "fsGroup"):
+            if isinstance(psc.get(key), int):
+                rep.add("MEDIUM", "ocp-uid", r,
+                        f"securityContext.{key}: {psc[key]} fijo: fuera del rango del namespace es rechazado por "
+                        "restricted-v2. Omitirlo y dejar que OpenShift lo asigne", source=src)
+        if psc.get("supplementalGroups"):
+            rep.add("MEDIUM", "ocp-uid", r,
+                    f"supplementalGroups fijos {psc['supplementalGroups']}: deben estar en el rango del namespace",
+                    source=src)
+        if psc.get("seLinuxOptions"):
+            rep.add("MEDIUM", "ocp-selinux", r, "seLinuxOptions personalizado: restricted-v2 usa MustRunAs",
+                    source=src)
 
     # ---- Contenedores ----
     sum_cpu_r = sum_cpu_l = sum_mem_r = sum_mem_l = 0.0
@@ -635,21 +746,40 @@ def analyze_workload(rep, obj, src, hpas, pdbs, netpols):
 
         if csc.get("privileged"):
             add("HIGH", "security", "Contenedor privileged: true")
+            scc_needed.add("privileged")
         if csc.get("allowPrivilegeEscalation") is not False:
-            add("MEDIUM", "security", "allowPrivilegeEscalation no está en false")
+            if ocp:
+                add("LOW", "security", "allowPrivilegeEscalation no explícito en false (la SCC lo fuerza, pero la "
+                                       "Pod Security Admission 'restricted' generará warnings)")
+            else:
+                add("MEDIUM", "security", "allowPrivilegeEscalation no está en false")
         run_user = eff("runAsUser")
+        c_ru = csc.get("runAsUser")
         if run_user == 0:
             add("HIGH", "security", "Corre como root (runAsUser: 0)")
+            scc_needed.add("anyuid")
+        elif ocp:
+            # En OpenShift NO se debe fijar UID; restricted-v2 garantiza no-root por sí misma
+            if isinstance(c_ru, int) and c_ru > 0:
+                scc_needed.add("nonroot-v2")
+                add("HIGH", "ocp-uid", f"runAsUser: {c_ru} fijo en el contenedor: rechazado por restricted-v2 "
+                                       "(UID aleatorio del namespace). Quitarlo")
+            if isinstance(csc.get("runAsGroup"), int):
+                add("MEDIUM", "ocp-uid", f"runAsGroup: {csc['runAsGroup']} fijo en el contenedor")
         elif eff("runAsNonRoot") is not True and not (isinstance(run_user, int) and run_user > 0):
             add("MEDIUM", "security", "No garantiza ejecución como no-root (runAsNonRoot/runAsUser)")
         if csc.get("readOnlyRootFilesystem") is not True:
             add("LOW", "security", "readOnlyRootFilesystem no está en true")
         caps = csc.get("capabilities") or {}
         drop = {str(x).upper() for x in caps.get("drop") or []}
-        added = {str(x).upper() for x in caps.get("add") or []}
+        added = {str(x).upper().removeprefix("CAP_") for x in caps.get("add") or []}
         if "ALL" not in drop:
             add("LOW", "security", "No hace drop de ALL capabilities")
-        if added & DANGEROUS_CAPS:
+        if ocp and added - OCP_ALLOWED_CAPS:
+            add("HIGH", "ocp-caps", f"Agrega capabilities {sorted(added - OCP_ALLOWED_CAPS)}: restricted-v2 solo "
+                                    "permite NET_BIND_SERVICE; el pod será rechazado sin una SCC adicional")
+            scc_needed.add("SCC personalizada (capabilities)")
+        elif added & DANGEROUS_CAPS:
             add("HIGH", "security", f"Agrega capabilities peligrosas: {sorted(added & DANGEROUS_CAPS)}")
         if not eff("seccompProfile"):
             add("LOW", "security", "Sin seccompProfile (recomendado: RuntimeDefault)")
@@ -663,6 +793,19 @@ def analyze_workload(rep, obj, src, hpas, pdbs, netpols):
         for p in c.get("ports") or []:
             if p.get("hostPort"):
                 add("MEDIUM", "hostport", f"hostPort {p['hostPort']} (limita scheduling y expone el nodo)")
+                if ocp:
+                    scc_needed.add("hostnetwork-v2")
+            cport = p.get("containerPort")
+            if ocp and isinstance(cport, int) and cport < 1024 and "NET_BIND_SERVICE" not in added \
+                    and not csc.get("privileged"):
+                add("MEDIUM", "ocp-puerto", f"containerPort {cport} < 1024: con UID no-root no podrá hacer bind. "
+                                           "Usar puerto >= 1024 (ej. 8080) o agregar NET_BIND_SERVICE")
+
+    if ocp and scc_needed:
+        rep.add("HIGH", "ocp-scc", r,
+                f"No es compatible con la SCC restricted-v2; requeriría: {', '.join(sorted(scc_needed))}. "
+                "Verificar que el ServiceAccount tenga esa SCC aprobada (oc adm policy add-scc-to-user) "
+                "o ajustar el chart", source=src)
 
     # Request efectivo del pod = max(init más grande, suma de contenedores)
     rep.capacity.append(Capacity(
@@ -808,6 +951,7 @@ def md_escape(s):
 def write_markdown(reports, path, min_sev, args):
     L = ["# Revisión de Helm charts", "",
          f"- Namespace de render: `{args.namespace}`",
+         f"- Plataforma: `{args.platform}`" + (f" (OCP {args.ocp_version})" if args.ocp_version else ""),
          f"- Values: {', '.join(f'`{v}`' for v in args.values) or '(defaults del chart)'}",
          f"- Kubernetes objetivo: `{args.kube_version or 'default de helm'}`", "",
          "## Resumen", "", "| Chart | Versión | ALTA | MEDIA | BAJA | INFO |", "|---|---|---|---|---|---|"]
@@ -886,7 +1030,7 @@ def review_chart(args, chart):
         Path(args.save_rendered).mkdir(parents=True, exist_ok=True)
         Path(args.save_rendered, f"{safe}.rendered.yaml").write_text(text, encoding="utf-8")
 
-    analyze(rep, parse_manifests(text), args.namespace)
+    analyze(rep, parse_manifests(text), args.namespace, args.platform)
 
     if args.external:
         with tempfile.TemporaryDirectory() as td:
@@ -906,6 +1050,10 @@ def main():
     ap.add_argument("-n", "--namespace", default="default", help="Namespace para el render (default: default)")
     ap.add_argument("--version", help="Versión del chart (para charts remotos/OCI)")
     ap.add_argument("--kube-version", help="Versión de Kubernetes objetivo, ej. 1.30 (afecta .Capabilities)")
+    ap.add_argument("--platform", default="kubernetes", choices=["kubernetes", "openshift"],
+                    help="Plataforma destino: activa checks de SCC restricted-v2, Routes, DeploymentConfig, etc.")
+    ap.add_argument("--ocp-version", help=f"Versión de OpenShift (implica --platform openshift y fija --kube-version). "
+                                          f"Conocidas: {', '.join(OCP_KUBE_MAP)}")
     ap.add_argument("--api-versions", action="append", default=[],
                     help="API disponible en el cluster para .Capabilities, ej. monitoring.coreos.com/v1 (repetible)")
     ap.add_argument("--rendered", help="Analizar un YAML ya renderizado en vez de ejecutar helm template (1 chart)")
@@ -922,6 +1070,13 @@ def main():
     ap.add_argument("--no-color", action="store_true")
     args = ap.parse_args()
 
+    if args.ocp_version:
+        args.platform = "openshift"
+        ocpv = ".".join(args.ocp_version.lstrip("v").split(".")[:2])
+        if not args.kube_version:
+            if ocpv not in OCP_KUBE_MAP:
+                ap.error(f"Versión OCP '{args.ocp_version}' no mapeada; indica --kube-version manualmente")
+            args.kube_version = OCP_KUBE_MAP[ocpv]
     if args.rendered and len(args.charts) != 1:
         ap.error("--rendered solo admite un chart")
     if not args.rendered and not shutil.which("helm"):
