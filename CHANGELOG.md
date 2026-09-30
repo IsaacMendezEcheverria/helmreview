@@ -9,6 +9,11 @@ Tipos de cambio: **Agregado**, **Cambiado**, **Obsoleto**, **Eliminado**, **Corr
 
 ## [Sin publicar]
 
+## [1.0.2] - 2026-09-30
+
+### Agregado
+- Publicación en PyPI (`pip install helmreview`) con Trusted Publishing.
+
 ### Cambiado
 - README: el ejemplo de GitHub Actions usa las versiones actuales (checkout v7, setup-python v7, setup-helm v5, upload-artifact v7).
 
@@ -90,7 +95,8 @@ Primera versión como proyecto mantenible. El script `helm_review.py` se reestru
 - Reportes en consola, Markdown y JSON; `--fail-on` para CI; integración opcional con kubeconform, kube-linter y
   trivy.
 
-[Sin publicar]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v1.0.1...HEAD
+[Sin publicar]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v1.0.2...HEAD
+[1.0.2]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v1.0.1...v1.0.2
 [1.0.1]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v0.1.0...v0.2.0
