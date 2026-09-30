@@ -9,6 +9,8 @@ Tipos de cambio: **Agregado**, **Cambiado**, **Obsoleto**, **Eliminado**, **Corr
 
 ## [Sin publicar]
 
+## [1.0.1] - 2026-09-30
+
 ### Agregado
 - Licencia MIT (`LICENSE`) y publicación como proyecto open source.
 - Archivos de comunidad: `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1) y `SECURITY.md`.
@@ -85,7 +87,8 @@ Primera versión como proyecto mantenible. El script `helm_review.py` se reestru
 - Reportes en consola, Markdown y JSON; `--fail-on` para CI; integración opcional con kubeconform, kube-linter y
   trivy.
 
-[Sin publicar]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v1.0.0...HEAD
+[Sin publicar]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v1.0.1...HEAD
+[1.0.1]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v1.0.0...v1.0.1
 [1.0.0]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v0.2.0...v1.0.0
 [0.2.0]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v0.1.0...v0.2.0
 [0.1.0]: https://github.com/IsaacMendezEcheverria/helmreview/releases/tag/v0.1.0
