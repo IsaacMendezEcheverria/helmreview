@@ -1,0 +1,29 @@
+name: Propuesta de mejora o check nuevo
+description: Sugiere una funcionalidad o un check nuevo
+labels: [enhancement]
+body:
+  - type: textarea
+    id: problema
+    attributes:
+      label: Problema que resuelve
+      description: Qué riesgo o error en un chart debería detectarse, o qué falta en la herramienta.
+    validations:
+      required: true
+  - type: textarea
+    id: propuesta
+    attributes:
+      label: Propuesta
+      description: Si es un check, indica el ID sugerido, la severidad y la plataforma (k8s / ocp).
+    validations:
+      required: true
+  - type: textarea
+    id: ejemplo
+    attributes:
+      label: Manifiesto de ejemplo
+      render: yaml
+  - type: checkboxes
+    id: contribuir
+    attributes:
+      label: Contribución
+      options:
+        - label: Puedo enviar un pull request con la implementación

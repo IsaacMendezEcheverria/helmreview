@@ -31,11 +31,25 @@ git tag -a v1.1.0 -m "helmreview 1.1.0"
 git push origin main --follow-tags
 ```
 
-El pipeline de GitLab (`.gitlab-ci.yml`) hace lo siguiente al detectar un tag `v*`:
+Si `origin` tiene configurados varios push URLs (ver [ci-platforms.md](ci-platforms.md)), el mismo push llega a
+GitHub, GitLab y Google Secure Source Manager, y cada plataforma hace su parte al detectar el tag `vX.Y.Z`:
 
-1. Corre lint y tests.
-2. Construye el wheel y el sdist (`make build`).
-3. Los adjunta como artifacts del job y, si está configurado, los publica en el Package Registry del proyecto.
+| Plataforma | Qué hace con el tag |
+|---|---|
+| GitHub (`.github/workflows/release.yml`) | Verifica que el tag coincida con `__version__`, construye, crea el GitHub Release con las notas del CHANGELOG y publica en **PyPI** si `PUBLISH_PYPI=true` |
+| GitLab (`.gitlab-ci.yml`) | Lint, tests y build; publica en el Package Registry del proyecto y en PyPI si `PUBLISH_PYPI=true` |
+| Google Cloud Build (`.cloudbuild/release.yaml`) | Verifica la versión, construye y publica en Artifact Registry |
+
+**PyPI se publica desde una sola plataforma.** Una versión subida a PyPI no se puede reemplazar: si algo sale
+mal, publica una versión PATCH nueva.
+
+Para probar el paquete antes de un release real, súbelo a TestPyPI:
+
+```bash
+make build
+.venv/bin/twine upload --repository testpypi dist/*
+pip install --index-url https://test.pypi.org/simple/ --extra-index-url https://pypi.org/simple/ helmreview
+```
 
 ## Verificación posterior
 

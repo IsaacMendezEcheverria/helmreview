@@ -1,0 +1,33 @@
+# Triggers de Cloud Build para Google Secure Source Manager (SSM).
+# SSM lee este archivo desde la rama por defecto. Reemplaza TU_PROYECTO y la service account.
+# Documentación: https://cloud.google.com/secure-source-manager/docs/connect-cloud-build
+#
+# Si usas Cloud Build con GitHub o GitLab en lugar de SSM, este archivo se ignora: crea los triggers con
+#   gcloud builds triggers create github|gitlab ... --build-config=.cloudbuild/cloudbuild.yaml
+# (ver docs/ci-platforms.md).
+triggers:
+  - name: helmreview-pr
+    project: TU_PROYECTO
+    eventType: pull_request
+    includedGitRefs: ^main$
+    configFilePath: .cloudbuild/cloudbuild.yaml
+    serviceAccount: projects/TU_PROYECTO/serviceAccounts/cloudbuild-helmreview@TU_PROYECTO.iam.gserviceaccount.com
+
+  - name: helmreview-main
+    project: TU_PROYECTO
+    eventType: push
+    includedGitRefs: ^main$
+    configFilePath: .cloudbuild/cloudbuild.yaml
+    serviceAccount: projects/TU_PROYECTO/serviceAccounts/cloudbuild-helmreview@TU_PROYECTO.iam.gserviceaccount.com
+
+  # Release al empujar un tag vX.Y.Z. Si tu instancia de SSM no dispara builds por tag,
+  # ejecuta .cloudbuild/release.yaml a mano con gcloud builds submit.
+  - name: helmreview-release
+    project: TU_PROYECTO
+    eventType: push
+    includedGitRefs: ^v[0-9]+\.[0-9]+\.[0-9]+$
+    configFilePath: .cloudbuild/release.yaml
+    serviceAccount: projects/TU_PROYECTO/serviceAccounts/cloudbuild-helmreview@TU_PROYECTO.iam.gserviceaccount.com
+    substitutions:
+      _AR_LOCATION: us-central1
+      _AR_REPO: helmreview

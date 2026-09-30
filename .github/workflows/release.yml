@@ -1,0 +1,83 @@
+# Release de helmreview en GitHub al empujar un tag vX.Y.Z:
+#   1. Verifica que el tag coincida con __version__.
+#   2. Construye wheel + sdist.
+#   3. Crea el GitHub Release con los archivos adjuntos y las notas del CHANGELOG.
+#   4. Publica en PyPI con Trusted Publishing (OIDC), solo si la variable del repo PUBLISH_PYPI == "true".
+#
+# Requisitos para PyPI (una sola vez):
+#   - pypi.org > Publishing > Add a new pending publisher (GitHub): owner, repo, workflow "release.yml",
+#     environment "pypi".
+#   - GitHub > Settings > Environments > crear "pypi".
+#   - GitHub > Settings > Secrets and variables > Actions > Variables > PUBLISH_PYPI = true
+name: Release
+
+on:
+  push:
+    tags: ["v[0-9]+.[0-9]+.[0-9]+*"]
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Verificar que el tag coincide con la versión del paquete
+        run: |
+          PKG_VERSION=$(python -c "import re,pathlib;print(re.search(r'__version__ = \"(.+?)\"', pathlib.Path('src/helmreview/__init__.py').read_text()).group(1))")
+          if [ "v${PKG_VERSION}" != "${GITHUB_REF_NAME}" ]; then
+            echo "::error::El tag ${GITHUB_REF_NAME} no coincide con __version__ = ${PKG_VERSION}"
+            exit 1
+          fi
+      - run: pip install build twine
+      - run: python -m build
+      - run: twine check --strict dist/*
+      - uses: actions/upload-artifact@v4
+        with:
+          name: dist
+          path: dist/
+
+  github-release:
+    runs-on: ubuntu-latest
+    needs: build
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Extraer notas del CHANGELOG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          awk -v v="$VERSION" '
+            $0 ~ "^## \\[" v "\\]" {found=1; next}
+            found && /^## \[/ {exit}
+            found {print}
+          ' CHANGELOG.md > release-notes.md
+          [ -s release-notes.md ] || echo "Ver CHANGELOG.md" > release-notes.md
+      - name: Crear release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh release create "$GITHUB_REF_NAME" dist/* --title "helmreview $GITHUB_REF_NAME" --notes-file release-notes.md --verify-tag
+
+  pypi:
+    runs-on: ubuntu-latest
+    needs: build
+    if: vars.PUBLISH_PYPI == 'true'
+    environment:
+      name: pypi
+      url: https://pypi.org/project/helmreview/
+    permissions:
+      id-token: write
+    steps:
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - uses: pypa/gh-action-pypi-publish@release/v1

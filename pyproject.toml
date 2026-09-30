@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68", "wheel"]
+requires = ["setuptools>=77", "wheel"]   # >=77: licencia como expresión SPDX (PEP 639)
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -8,16 +8,41 @@ dynamic = ["version"]
 description = "Revisión estática local de Helm charts para Kubernetes y OpenShift"
 readme = "README.md"
 requires-python = ">=3.9"
+license = "MIT"
+license-files = ["LICENSE"]
 authors = [{ name = "Isaac Mendez", email = "isaac.mendez@siproset.com" }]
+maintainers = [{ name = "Isaac Mendez", email = "isaac.mendez@siproset.com" }]
+keywords = ["helm", "kubernetes", "openshift", "lint", "review", "devops", "sre", "cli"]
 dependencies = ["PyYAML>=6.0"]
 classifiers = [
-    "Programming Language :: Python :: 3",
+    "Development Status :: 5 - Production/Stable",
     "Environment :: Console",
+    "Intended Audience :: Developers",
+    "Intended Audience :: System Administrators",
+    "Natural Language :: Spanish",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Topic :: Software Development :: Quality Assurance",
     "Topic :: System :: Systems Administration",
 ]
 
+# Repositorio canónico: GitHub. GitLab y Google Secure Source Manager funcionan como espejos
+# (ver docs/ci-platforms.md). Si cambias el canónico, cambia estas URLs.
+[project.urls]
+Homepage = "https://github.com/IsaacMendezEcheverria/helmreview"
+Repository = "https://github.com/IsaacMendezEcheverria/helmreview"
+Issues = "https://github.com/IsaacMendezEcheverria/helmreview/issues"
+Changelog = "https://github.com/IsaacMendezEcheverria/helmreview/blob/main/CHANGELOG.md"
+Documentation = "https://github.com/IsaacMendezEcheverria/helmreview/tree/main/docs"
+
 [project.optional-dependencies]
-dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.5", "pre-commit>=3", "build>=1"]
+dev = ["pytest>=7", "pytest-cov>=4", "ruff>=0.5", "pre-commit>=3", "build>=1", "twine>=6"]
 
 [project.scripts]
 helmreview = "helmreview.cli:main"

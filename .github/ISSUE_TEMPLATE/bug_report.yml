@@ -1,0 +1,41 @@
+name: Reporte de bug
+description: Algo no funciona como se espera
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Gracias por reportarlo. **No pegues secretos ni values reales de producción.**
+        Si es una vulnerabilidad de seguridad, sigue [SECURITY.md](https://github.com/IsaacMendezEcheverria/helmreview/blob/main/SECURITY.md) en lugar de abrir un issue.
+  - type: textarea
+    id: descripcion
+    attributes:
+      label: Qué pasó
+      description: Qué esperabas y qué obtuviste.
+    validations:
+      required: true
+  - type: textarea
+    id: reproducir
+    attributes:
+      label: Cómo reproducirlo
+      description: Comando exacto y, si aplica, un chart o manifiesto mínimo.
+      render: shell
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Versión de helmreview
+      placeholder: "helmreview --version"
+    validations:
+      required: true
+  - type: input
+    id: entorno
+    attributes:
+      label: Entorno
+      placeholder: "Python 3.12, helm 3.16.2, Ubuntu 24.04, --ocp-version 4.16"
+  - type: textarea
+    id: salida
+    attributes:
+      label: Salida o error
+      render: text

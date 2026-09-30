@@ -24,8 +24,9 @@ format:  ## Aplica formato y correcciones automáticas
 	$(BIN)/ruff check --fix src tests
 	$(BIN)/ruff format src tests
 
-build: clean  ## Construye wheel y sdist en dist/
+build: clean  ## Construye wheel y sdist en dist/ y valida los metadatos
 	$(BIN)/python -m build
+	$(BIN)/twine check --strict dist/*
 
 clean:  ## Borra artefactos de build y caches
 	rm -rf build dist *.egg-info src/*.egg-info .pytest_cache .ruff_cache .coverage coverage.xml htmlcov

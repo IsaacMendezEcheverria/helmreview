@@ -1,0 +1,56 @@
+# Release de helmreview en Google Cloud Build: construye el paquete y lo publica en un repositorio
+# Python de Artifact Registry. No publica en PyPI (eso se hace desde una sola plataforma; ver
+# docs/ci-platforms.md).
+#
+# Requisitos (una sola vez):
+#   gcloud artifacts repositories create helmreview --repository-format=python --location=us-central1
+#   La service account del build necesita roles/artifactregistry.writer sobre ese repositorio.
+#
+# Ejecución manual (por ejemplo, si el trigger por tag no aplica en tu instancia):
+#   gcloud builds submit --config .cloudbuild/release.yaml --substitutions=_AR_LOCATION=us-central1,_AR_REPO=helmreview .
+#
+# Instalación desde Artifact Registry:
+#   pip install keyrings.google-artifactregistry-auth
+#   pip install --index-url https://us-central1-python.pkg.dev/PROYECTO/helmreview/simple/ helmreview
+substitutions:
+  _AR_LOCATION: us-central1
+  _AR_REPO: helmreview
+
+options:
+  logging: CLOUD_LOGGING_ONLY
+  substitutionOption: ALLOW_LOOSE
+
+steps:
+  - id: verify-version
+    name: python:3.12-slim
+    entrypoint: bash
+    # TAG_NAME: triggers conectados a GitHub/GitLab. REF_NAME: triggers de Secure Source Manager.
+    env: ["TAG=${TAG_NAME}", "REF=${REF_NAME}"]
+    args:
+      - -ceu
+      - |
+        PKG_VERSION=$(python -c "import re,pathlib;print(re.search(r'__version__ = \"(.+?)\"', pathlib.Path('src/helmreview/__init__.py').read_text()).group(1))")
+        REF_TAG="$${TAG:-$${REF:-}}"
+        echo "Versión del paquete: $$PKG_VERSION  |  ref: $${REF_TAG:-<build manual>}"
+        case "$$REF_TAG" in
+          v*) [ "$$REF_TAG" = "v$$PKG_VERSION" ] || { echo "El tag $$REF_TAG no coincide con __version__ $$PKG_VERSION"; exit 1; } ;;
+        esac
+
+  - id: build
+    name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        rm -rf dist src/*.egg-info
+        pip install -q build twine
+        python -m build
+        twine check --strict dist/*
+
+# Cloud Build sube los paquetes a Artifact Registry con la identidad de la service account del build.
+artifacts:
+  pythonPackages:
+    - repository: "https://${_AR_LOCATION}-python.pkg.dev/$PROJECT_ID/${_AR_REPO}"
+      paths: ["dist/*"]
+
+timeout: 900s

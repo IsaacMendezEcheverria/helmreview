@@ -9,6 +9,30 @@ Tipos de cambio: **Agregado**, **Cambiado**, **Obsoleto**, **Eliminado**, **Corr
 
 ## [Sin publicar]
 
+### Agregado
+- Licencia MIT (`LICENSE`) y publicación como proyecto open source.
+- Archivos de comunidad: `CODE_OF_CONDUCT.md` (Contributor Covenant 2.1) y `SECURITY.md`.
+- CI y release en GitHub Actions (`.github/workflows/ci.yml` y `release.yml`): matriz de Python 3.9 a 3.13,
+  GitHub Release con las notas del CHANGELOG y publicación en PyPI con Trusted Publishing.
+- CI y release en Google Cloud Build (`.cloudbuild/`), con triggers para Secure Source Manager y publicación en
+  Artifact Registry.
+- Plantillas de issues y de PR/MR para GitHub (`.github/`) y GitLab (`.gitlab/`), y Dependabot.
+- `docs/ci-platforms.md`: configuración de las tres plataformas y espejos entre ellas.
+
+### Cambiado
+- `pyproject.toml`: licencia SPDX (`MIT`), keywords, clasificadores, `[project.urls]` y `twine` en `dev`.
+  El build requiere `setuptools>=77`.
+- GitLab CI: `twine check` en el build, tests también en Python 3.13, y job opcional `publish-pypi` con
+  Trusted Publishing (se activa con `PUBLISH_PYPI=true`). El job de publicación al Package Registry se renombra
+  a `publish-gitlab`.
+- README: instalación desde PyPI, ejemplos de integración para GitHub Actions, GitLab CI y Cloud Build, y
+  secciones de contribución y licencia.
+- CONTRIBUTING: flujo con fork para colaboradores externos y terminología neutral (PR/MR).
+- `make build` ejecuta `twine check --strict`.
+
+### Corregido
+- El ejemplo de chart OCI en `helmreview --help` usaba `--version` en lugar de `--chart-version`.
+
 ## [1.0.0] - 2026-09-30
 
 Primera versión como proyecto mantenible. El script `helm_review.py` se reestructura como el paquete Python
@@ -61,7 +85,7 @@ Primera versión como proyecto mantenible. El script `helm_review.py` se reestru
 - Reportes en consola, Markdown y JSON; `--fail-on` para CI; integración opcional con kubeconform, kube-linter y
   trivy.
 
-[Sin publicar]: https://gitlab.example.com/infra/helmreview/-/compare/v1.0.0...HEAD
-[1.0.0]: https://gitlab.example.com/infra/helmreview/-/compare/v0.2.0...v1.0.0
-[0.2.0]: https://gitlab.example.com/infra/helmreview/-/compare/v0.1.0...v0.2.0
-[0.1.0]: https://gitlab.example.com/infra/helmreview/-/tags/v0.1.0
+[Sin publicar]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v0.2.0...v1.0.0
+[0.2.0]: https://github.com/IsaacMendezEcheverria/helmreview/compare/v0.1.0...v0.2.0
+[0.1.0]: https://github.com/IsaacMendezEcheverria/helmreview/releases/tag/v0.1.0

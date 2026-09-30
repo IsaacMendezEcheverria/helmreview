@@ -30,8 +30,14 @@ helmreview/
 │   ├── fixtures/charts/     # charts de prueba (sample = chart "limpio" para integración con helm)
 │   ├── fixtures/rendered/   # YAML renderizados con problemas conocidos
 │   └── test_*.py
-└── docs/
+├── docs/
+├── .github/                 # GitHub Actions (ci, release), plantillas de issues/PR, Dependabot
+├── .gitlab/                 # plantillas de issues/MR de GitLab
+├── .gitlab-ci.yml           # pipeline de GitLab
+└── .cloudbuild/             # Google Cloud Build (ci, release) y triggers de Secure Source Manager
 ```
+
+Las tres configuraciones de CI hacen lo mismo; ver [ci-platforms.md](ci-platforms.md).
 
 ## Flujo de una revisión
 

@@ -1,5 +1,10 @@
 # helmreview
 
+[![CI](https://github.com/IsaacMendezEcheverria/helmreview/actions/workflows/ci.yml/badge.svg)](https://github.com/IsaacMendezEcheverria/helmreview/actions/workflows/ci.yml)
+[![PyPI](https://img.shields.io/pypi/v/helmreview)](https://pypi.org/project/helmreview/)
+[![Python](https://img.shields.io/pypi/pyversions/helmreview)](https://pypi.org/project/helmreview/)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 Revisión **estática y local** de Helm charts para Kubernetes y OpenShift. El chart se renderiza con
 `helm template` en tu propia estación: no se necesita acceso al cluster y no se sube nada a servicios externos.
 
@@ -11,7 +16,7 @@ A partir del render, la herramienta:
   del chart.
 - **Valida compatibilidad con OpenShift** (`--ocp-version`): SCC `restricted-v2`, Routes, DeploymentConfig y RBAC
   sobre SCC.
-- **Genera reportes** en consola, Markdown (para tickets o merge requests) y JSON (para integraciones).
+- **Genera reportes** en consola, Markdown (para tickets o pull/merge requests) y JSON (para integraciones).
 - **Integra con CI**: `--fail-on` devuelve el exit code 2 si hay hallazgos a partir de la severidad indicada.
 
 El catálogo completo de checks está en [docs/checks.md](docs/checks.md).
@@ -29,21 +34,30 @@ El catálogo completo de checks está en [docs/checks.md](docs/checks.md).
 ## Instalación
 
 ```bash
-git clone <url-del-repo> helmreview && cd helmreview
+pip install helmreview                 # desde PyPI
+# pipx install helmreview              # recomendado para CLIs: entorno aislado
+helmreview --version
+```
+
+Otras formas:
+
+```bash
+# Directo desde el repositorio (GitHub, GitLab o Secure Source Manager), fijando un tag
+pip install "git+https://github.com/IsaacMendezEcheverria/helmreview.git@v1.0.0"
+
+# Desde el código fuente
+git clone https://github.com/IsaacMendezEcheverria/helmreview.git && cd helmreview
 python3 -m venv .venv
 source .venv/bin/activate            # Windows: .\.venv\Scripts\Activate.ps1
 pip install .                        # usuarios
 # pip install -e ".[dev]"            # desarrolladores (tests, linter, pre-commit)
 
-helmreview --version
-```
-
-También se puede instalar desde el wheel generado con `make build`, o desde el registry de paquetes del GitLab
-si se publica ahí:
-
-```bash
+# Desde el wheel generado con `make build`
 pip install dist/helmreview-1.0.0-py3-none-any.whl
 ```
+
+Si tu organización publica el paquete en su registro interno (Package Registry de GitLab o Artifact Registry de
+Google Cloud), mira [docs/ci-platforms.md](docs/ci-platforms.md) para el `--index-url` correspondiente.
 
 ## Uso rápido
 
@@ -121,19 +135,58 @@ con `restricted-v2`.
 
 ## Integración en CI
 
-Ejemplo para el pipeline del repositorio de charts (GitLab CI):
+`--fail-on` hace fallar el job si hay hallazgos a partir de la severidad indicada, y el reporte Markdown
+queda como artefacto para revisarlo en el PR/MR.
+
+**GitHub Actions**
+
+```yaml
+jobs:
+  helm-review:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with: { python-version: "3.12" }
+      - uses: azure/setup-helm@v4
+      - run: pip install helmreview==1.0.0
+      - run: helmreview charts/* --ocp-version 4.16 -f values-prod.yaml --report revision.md --fail-on high
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with: { name: helm-review, path: revision.md }
+```
+
+**GitLab CI**
 
 ```yaml
 helm-review:
   image: python:3.12-slim
   before_script:
-    - apt-get update && apt-get install -y curl && curl -fsSL https://raw.githubusercontent.com/helm/helm/main/scripts/get-helm-3 | bash
-    - pip install "git+https://gitlab.example.com/infra/helmreview.git@v1.0.0"   # o el wheel de tu registry
+    - apt-get update -qq && apt-get install -y -qq curl > /dev/null
+    - curl -fsSL https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz | tar xz -C /tmp && mv /tmp/linux-amd64/helm /usr/local/bin/
+    - pip install helmreview==1.0.0
   script:
     - helmreview charts/* --ocp-version 4.16 -f values-prod.yaml --report revision.md --fail-on high
   artifacts:
     when: always
     paths: [revision.md]
+```
+
+**Google Cloud Build**
+
+```yaml
+steps:
+  - name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        apt-get update -qq && apt-get install -y -qq curl > /dev/null
+        curl -fsSL https://get.helm.sh/helm-v3.16.2-linux-amd64.tar.gz | tar xz -C /tmp && mv /tmp/linux-amd64/helm /usr/local/bin/
+        pip install -q helmreview==1.0.0
+        helmreview charts/* --ocp-version 4.16 -f values-prod.yaml --report revision.md --fail-on high
+options:
+  logging: CLOUD_LOGGING_ONLY
 ```
 
 ## Uso como librería
@@ -151,7 +204,10 @@ for f in rep.filtered("MEDIUM"):
 
 | Documento | Contenido |
 |---|---|
-| [CONTRIBUTING.md](CONTRIBUTING.md) | Entorno de desarrollo, convenciones de commits y ramas, flujo de merge requests |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Entorno de desarrollo, convenciones de commits y ramas, flujo de pull/merge requests |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Código de conducta de la comunidad |
+| [SECURITY.md](SECURITY.md) | Cómo reportar vulnerabilidades |
+| [docs/ci-platforms.md](docs/ci-platforms.md) | CI y publicación en GitHub, GitLab y Google Cloud; espejos entre plataformas |
 | [docs/architecture.md](docs/architecture.md) | Estructura del código y flujo de ejecución |
 | [docs/adding-a-check.md](docs/adding-a-check.md) | Cómo agregar o modificar un check, paso a paso |
 | [docs/checks.md](docs/checks.md) | Catálogo de checks con sus IDs |
@@ -172,6 +228,17 @@ make build    # wheel y sdist en dist/
 Se usa [Semantic Versioning](https://semver.org/lang/es/). La versión vive en un solo lugar:
 `src/helmreview/__init__.py`. Los cambios se registran en [CHANGELOG.md](CHANGELOG.md).
 
+## Contribuir
+
+Las contribuciones son bienvenidas: reportes de bugs, checks nuevos, soporte para nuevas versiones de
+Kubernetes/OpenShift y mejoras en la documentación. Lee [CONTRIBUTING.md](CONTRIBUTING.md) antes de abrir un
+pull request y respeta el [código de conducta](CODE_OF_CONDUCT.md). Para temas de seguridad, sigue
+[SECURITY.md](SECURITY.md).
+
 ## Mantenedores
 
 - Isaac Mendez — isaac.mendez@siproset.com
+
+## Licencia
+
+Distribuido bajo la licencia [MIT](LICENSE). © 2026 Isaac Mendez.

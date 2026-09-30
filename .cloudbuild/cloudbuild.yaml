@@ -1,0 +1,51 @@
+# CI de helmreview en Google Cloud Build: lint + tests (con helm real) + build.
+# Sirve con Google Secure Source Manager (triggers en .cloudbuild/triggers.yaml) y con triggers de
+# Cloud Build conectados a GitHub o GitLab. Equivalentes: .github/workflows/ci.yml y .gitlab-ci.yml.
+#
+# Ejecución manual:
+#   gcloud builds submit --config .cloudbuild/cloudbuild.yaml .
+#
+# Nota: en los args, $VAR lo sustituye Cloud Build; las variables de shell se escriben $$VAR.
+substitutions:
+  _HELM_VERSION: v3.16.2
+
+options:
+  logging: CLOUD_LOGGING_ONLY          # obligatorio con service account propia (triggers de SSM)
+  substitutionOption: ALLOW_LOOSE
+
+steps:
+  - id: lint
+    name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        pip install -q ruff
+        ruff check src tests
+        ruff format --check src tests
+
+  - id: test-py39
+    name: python:3.9-slim
+    entrypoint: bash
+    env: ["HELM_VERSION=${_HELM_VERSION}"]
+    args: [-ceu, "source .cloudbuild/install-helm.sh && pip install -q -e '.[dev]' && pytest --cov --cov-report=term"]
+
+  - id: test-py312
+    name: python:3.12-slim
+    entrypoint: bash
+    env: ["HELM_VERSION=${_HELM_VERSION}"]
+    args: [-ceu, "source .cloudbuild/install-helm.sh && pip install -q -e '.[dev]' && pytest --cov --cov-report=term"]
+
+  - id: build
+    name: python:3.12-slim
+    entrypoint: bash
+    args:
+      - -ceu
+      - |
+        rm -rf dist src/*.egg-info
+        pip install -q build twine
+        python -m build
+        twine check --strict dist/*
+        pip install -q dist/*.whl && helmreview --version
+
+timeout: 1200s

@@ -19,7 +19,7 @@ Ejemplos:
   helmreview ./mychart -f values-prod.yaml
   helmreview ./mychart -f values.yaml -f values-prod.yaml --kube-version 1.30 --report rev.md
   helmreview ./charts/* --min-severity medium --json rev.json --fail-on high
-  helmreview oci://harbor.local/charts/app --version 1.4.2 -f prod.yaml
+  helmreview oci://harbor.local/charts/app --chart-version 1.4.2 -f prod.yaml
   helmreview ./mychart -f values-ocp.yaml --ocp-version 4.16 --report rev.md
   helmreview ./mychart --rendered render.yaml
   helmreview ./mychart --ignore serviceaccount,chart-schema
