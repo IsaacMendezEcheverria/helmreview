@@ -145,13 +145,13 @@ jobs:
   helm-review:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v5
-      - uses: actions/setup-python@v6
+      - uses: actions/checkout@v7
+      - uses: actions/setup-python@v7
         with: { python-version: "3.12" }
-      - uses: azure/setup-helm@v4
+      - uses: azure/setup-helm@v5
       - run: pip install helmreview==1.0.0
       - run: helmreview charts/* --ocp-version 4.16 -f values-prod.yaml --report revision.md --fail-on high
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: always()
         with: { name: helm-review, path: revision.md }
 ```
