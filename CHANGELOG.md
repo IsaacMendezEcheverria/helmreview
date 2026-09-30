@@ -9,6 +9,9 @@ Tipos de cambio: **Agregado**, **Cambiado**, **Obsoleto**, **Eliminado**, **Corr
 
 ## [Sin publicar]
 
+### Cambiado
+- README: el ejemplo de GitHub Actions usa las versiones actuales (checkout v7, setup-python v7, setup-helm v5, upload-artifact v7).
+
 ## [1.0.1] - 2026-09-30
 
 ### Agregado
