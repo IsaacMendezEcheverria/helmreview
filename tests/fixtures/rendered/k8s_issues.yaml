@@ -1,0 +1,66 @@
+---
+# Source: demo/templates/deploy.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata: {name: web}
+spec:
+  replicas: 3
+  template:
+    metadata: {labels: {app: web}}
+    spec:
+      containers:
+      - name: web
+        image: nginx
+        env: [{name: DB_PASSWORD, value: "hunter2"}]
+        resources:
+          requests: {cpu: 250m, memory: 256Mi}
+          limits: {cpu: "1", memory: 2Gi}
+        readinessProbe: {httpGet: {path: /, port: 80}}
+---
+# Source: demo/templates/hpa.yaml
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata: {name: web}
+spec: {scaleTargetRef: {kind: Deployment, name: web}, minReplicas: 3, maxReplicas: 10}
+---
+# Source: demo/templates/sts.yaml
+apiVersion: apps/v1
+kind: StatefulSet
+metadata: {name: db}
+spec:
+  replicas: 1
+  template:
+    metadata: {labels: {app: db}}
+    spec:
+      securityContext: {runAsNonRoot: true, seccompProfile: {type: RuntimeDefault}}
+      containers:
+      - name: pg
+        image: postgres:16.2
+        resources: {limits: {cpu: 2, memory: 4Gi}}
+  volumeClaimTemplates:
+  - metadata: {name: data}
+    spec: {accessModes: [ReadWriteOnce], resources: {requests: {storage: 50Gi}}}
+---
+# Source: demo/templates/pdb.yaml
+apiVersion: policy/v1beta1
+kind: PodDisruptionBudget
+metadata: {name: db}
+spec: {minAvailable: 1, selector: {matchLabels: {app: db}}}
+---
+# Source: demo/templates/ds.yaml
+apiVersion: apps/v1
+kind: DaemonSet
+metadata: {name: agent}
+spec:
+  template:
+    metadata: {labels: {app: agent}}
+    spec:
+      hostNetwork: true
+      volumes: [{name: logs, hostPath: {path: /var/log}}]
+      containers: [{name: a, image: "agent:latest", resources: {requests: {cpu: 50m, memory: 64Mi}, limits: {memory: 128Mi}}}]
+---
+# Source: demo/templates/ing.yaml
+apiVersion: networking.k8s.io/v1
+kind: Ingress
+metadata: {name: web}
+spec: {rules: []}

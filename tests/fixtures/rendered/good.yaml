@@ -1,0 +1,73 @@
+---
+# Source: sample/templates/serviceaccount.yaml
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: sample
+---
+# Source: sample/templates/service.yaml
+apiVersion: v1
+kind: Service
+metadata:
+  name: sample
+spec:
+  selector: {app.kubernetes.io/name: sample}
+  ports: [{port: 8080, targetPort: 8080}]
+---
+# Source: sample/templates/deployment.yaml
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: sample
+spec:
+  replicas: 2
+  selector:
+    matchLabels: {app.kubernetes.io/name: sample}
+  template:
+    metadata:
+      labels: {app.kubernetes.io/name: sample}
+    spec:
+      serviceAccountName: sample
+      securityContext:
+        runAsNonRoot: true
+        seccompProfile: {type: RuntimeDefault}
+      topologySpreadConstraints:
+        - maxSkew: 1
+          topologyKey: kubernetes.io/hostname
+          whenUnsatisfiable: ScheduleAnyway
+          labelSelector: {matchLabels: {app.kubernetes.io/name: sample}}
+      containers:
+        - name: app
+          image: registry.local/sample:1.0.0
+          ports: [{containerPort: 8080}]
+          resources:
+            requests: {cpu: 100m, memory: 128Mi}
+            limits: {cpu: 500m, memory: 256Mi}
+          readinessProbe: {httpGet: {path: /ready, port: 8080}}
+          livenessProbe: {httpGet: {path: /live, port: 8080}, initialDelaySeconds: 15}
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities: {drop: [ALL]}
+---
+# Source: sample/templates/pdb.yaml
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: sample
+spec:
+  maxUnavailable: 1
+  selector:
+    matchLabels: {app.kubernetes.io/name: sample}
+---
+# Source: sample/templates/networkpolicy.yaml
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: sample
+spec:
+  podSelector:
+    matchLabels: {app.kubernetes.io/name: sample}
+  policyTypes: [Ingress]
+  ingress:
+    - ports: [{port: 8080}]

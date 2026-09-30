@@ -1,0 +1,74 @@
+# Pipeline de helmreview
+#  - MR y main: lint + tests (con helm real para los tests de integración)
+#  - Tag vX.Y.Z: además construye el paquete y lo publica en el Package Registry del proyecto
+stages: [lint, test, build, publish]
+
+default:
+  image: python:3.12-slim
+
+variables:
+  PIP_CACHE_DIR: "$CI_PROJECT_DIR/.cache/pip"
+  HELM_VERSION: "v3.16.2"
+
+cache:
+  key: pip-$CI_COMMIT_REF_SLUG
+  paths: [.cache/pip]
+
+workflow:
+  rules:
+    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
+    - if: $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+
+lint:
+  stage: lint
+  script:
+    - pip install ruff
+    - ruff check src tests
+    - ruff format --check src tests
+
+.test-template:
+  stage: test
+  before_script:
+    - apt-get update -qq && apt-get install -y -qq curl ca-certificates > /dev/null
+    - curl -fsSL "https://get.helm.sh/helm-${HELM_VERSION}-linux-amd64.tar.gz" | tar xz -C /tmp
+    - mv /tmp/linux-amd64/helm /usr/local/bin/helm && helm version
+    - pip install -e ".[dev]"
+  script:
+    - pytest --cov --cov-report=term --cov-report=xml --junitxml=report.xml
+  coverage: '/TOTAL.*\s+(\d+%)$/'
+  artifacts:
+    when: always
+    reports:
+      junit: report.xml
+      coverage_report:
+        coverage_format: cobertura
+        path: coverage.xml
+
+test:
+  extends: .test-template
+  parallel:
+    matrix:
+      - PY: ["3.9", "3.12"]
+  image: python:${PY}-slim
+
+build:
+  stage: build
+  script:
+    - pip install build
+    - python -m build
+    - pip install dist/*.whl && helmreview --version
+  artifacts:
+    paths: [dist/]
+    expire_in: 30 days
+
+publish:
+  stage: publish
+  rules:
+    - if: $CI_COMMIT_TAG =~ /^v\d+\.\d+\.\d+/
+  needs: [build]
+  script:
+    - pip install twine
+    - >
+      TWINE_PASSWORD=${CI_JOB_TOKEN} TWINE_USERNAME=gitlab-ci-token
+      python -m twine upload --repository-url ${CI_API_V4_URL}/projects/${CI_PROJECT_ID}/packages/pypi dist/*
