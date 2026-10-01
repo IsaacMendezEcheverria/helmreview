@@ -1,5 +1,8 @@
 blank_issues_enabled: false
 contact_links:
-  - name: Reportar una vulnerabilidad
-    url: https://github.com/IsaacMendezEcheverria/helmreview/security/advisories/new
-    about: Reporta problemas de seguridad de forma privada, no en un issue público.
+  - name: Pregunta de uso
+    url: https://github.com/IsaacMendezEcheverria/helmreview/discussions/categories/q-a
+    about: ¿Dudas sobre cómo usar helmreview o cómo interpretar un hallazgo? Pregunta en Discussions → Q&A.
+  - name: Ideas y conversación
+    url: https://github.com/IsaacMendezEcheverria/helmreview/discussions/categories/ideas
+    about: ¿Una idea que aún no está madura para un issue? Compártela en Discussions → Ideas.
