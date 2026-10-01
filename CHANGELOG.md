@@ -9,6 +9,9 @@ Tipos de cambio: **Agregado**, **Cambiado**, **Obsoleto**, **Eliminado**, **Corr
 
 ## [Sin publicar]
 
+### Cambiado
+- Plantillas de issues: links a Discussions (Q&A e Ideas) y se elimina el link de seguridad duplicado (GitHub ya lo muestra por SECURITY.md).
+
 ## [1.0.2] - 2026-09-30
 
 ### Agregado
